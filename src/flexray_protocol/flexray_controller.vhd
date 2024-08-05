@@ -10,7 +10,9 @@ entity flexray_controller is
         tx : out STD_LOGIC;
         data_in : in STD_LOGIC_VECTOR(63 downto 0);
         data_out : out STD_LOGIC_VECTOR(63 downto 0);
-        data_valid : out STD_LOGIC
+        data_valid : out STD_LOGIC;
+        sync : in STD_LOGIC;
+        cycle_time : in STD_LOGIC_VECTOR(31 downto 0)
     );
 end flexray_controller;
 
@@ -40,7 +42,7 @@ begin
             crc <= (others => '0');
             tx <= '1';
             data_valid <= '0';
-        elsif rising_edge(clk) then
+        elsif rising_edge(clk) and sync = '1' then
             case state is
                 when IDLE =>
                     if rx = '0' then -- Start of frame detected
@@ -68,8 +70,7 @@ begin
                             end if;
                         end if;
                     end if;
-
-                when PAYLOAD =>
+                  when PAYLOAD =>
                     if bit_counter < 8 then
                         shift_reg <= shift_reg(6 downto 0) & rx;
                         bit_counter <= bit_counter + 1;
