@@ -13,8 +13,7 @@ entity top_level is
         flexray_tx : out STD_LOGIC;
         data_in : in STD_LOGIC_VECTOR(63 downto 0);
         data_out : out STD_LOGIC_VECTOR(63 downto 0);
-        data_valid : out STD_LOGIC;
-        protocol_select : in STD_LOGIC_VECTOR(1 downto 0) -- "00" for CAN, "01" for LIN, "10" for FlexRay
+        data_valid : out STD_LOGIC
     );
 end top_level;
 
@@ -26,6 +25,7 @@ architecture Behavioral of top_level is
     signal flexray_rx_internal, flexray_tx_internal : STD_LOGIC;
     signal can_data_out, lin_data_out, flexray_data_out : STD_LOGIC_VECTOR(63 downto 0);
     signal can_data_valid, lin_data_valid, flexray_data_valid : STD_LOGIC;
+    signal protocol_select : STD_LOGIC_VECTOR(1 downto 0);
 
     component clock_generator
         Port ( 
@@ -111,6 +111,17 @@ architecture Behavioral of top_level is
         );
     end component;
 
+    component network_monitor
+        Port ( 
+            clk : in STD_LOGIC;
+            rst : in STD_LOGIC;
+            can_rx : in STD_LOGIC;
+            lin_rx : in STD_LOGIC;
+            flexray_rx : in STD_LOGIC;
+            protocol_select : out STD_LOGIC_VECTOR(1 downto 0)
+        );
+    end component;
+
 begin
     clock_gen: clock_generator
         port map (
@@ -186,6 +197,16 @@ begin
             rx_out => flexray_rx_internal,
             bus_plus => flexray_rx,
             bus_minus => flexray_tx
+        );
+
+    net_monitor: network_monitor
+        port map (
+            clk => clk_1m,
+            rst => rst,
+            can_rx => can_rx,
+            lin_rx => lin_rx,
+            flexray_rx => flexray_rx,
+            protocol_select => protocol_select
         );
 
     -- Protocol selection mux
