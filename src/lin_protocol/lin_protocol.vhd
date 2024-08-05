@@ -10,7 +10,9 @@ entity lin_controller is
         tx : out STD_LOGIC;
         data_in : in STD_LOGIC_VECTOR(63 downto 0);
         data_out : out STD_LOGIC_VECTOR(63 downto 0);
-        data_valid : out STD_LOGIC
+        data_valid : out STD_LOGIC;
+        sync : in STD_LOGIC;
+        bit_time : in STD_LOGIC_VECTOR(15 downto 0)
     );
 end lin_controller;
 
@@ -25,11 +27,9 @@ architecture Behavioral of lin_controller is
     signal checksum : STD_LOGIC_VECTOR(7 downto 0) := (others => '0');
 
     constant SYNC_BYTE : STD_LOGIC_VECTOR(7 downto 0) := x"55";
-    constant BIT_TIME : integer := 50; -- Assuming 20kbps LIN speed with 1MHz clock
     
 begin
     process(clk, rst)
-        variable bit_time_counter : integer range 0 to BIT_TIME-1 := 0;
     begin
         if rst = '1' then
             state <= IDLE;
@@ -41,83 +41,62 @@ begin
             checksum <= (others => '0');
             tx <= '1';
             data_valid <= '0';
-        elsif rising_edge(clk) then
+        elsif rising_edge(clk) and sync = '1' then
             case state is
                 when IDLE =>
                     tx <= '1';
                     if rx = '0' then -- Start bit detected
                         state <= SYNC;
                         bit_counter <= 0;
-                        bit_time_counter := 0;
                     end if;
 
                 when SYNC =>
-                    if bit_time_counter = BIT_TIME-1 then
-                        bit_time_counter := 0;
-                        if bit_counter < 8 then
-                            shift_reg <= shift_reg(6 downto 0) & rx;
-                            bit_counter <= bit_counter + 1;
-                        else
-                            if shift_reg = SYNC_BYTE then
-                                state <= IDENTIFIER;
-                                bit_counter <= 0;
-                            else
-                                state <= IDLE;
-                            end if;
-                        end if;
+                    if bit_counter < 8 then
+                        shift_reg <= shift_reg(6 downto 0) & rx;
+                        bit_counter <= bit_counter + 1;
                     else
-                        bit_time_counter := bit_time_counter + 1;
+                        if shift_reg = SYNC_BYTE then
+                            state <= IDENTIFIER;
+                            bit_counter <= 0;
+                        else
+                            state <= IDLE;
+                        end if;
                     end if;
 
                 when IDENTIFIER =>
-                    if bit_time_counter = BIT_TIME-1 then
-                        bit_time_counter := 0;
-                        if bit_counter < 6 then
-                            identifier <= identifier(4 downto 0) & rx;
-                            bit_counter <= bit_counter + 1;
-                        else
-                            state <= DATA;
-                            bit_counter <= 0;
-                            byte_counter <= 0;
-                        end if;
+                    if bit_counter < 6 then
+                        identifier <= identifier(4 downto 0) & rx;
+                        bit_counter <= bit_counter + 1;
                     else
-                        bit_time_counter := bit_time_counter + 1;
+                        state <= DATA;
+                        bit_counter <= 0;
+                        byte_counter <= 0;
                     end if;
 
                 when DATA =>
-                    if bit_time_counter = BIT_TIME-1 then
-                        bit_time_counter := 0;
-                        if bit_counter < 8 then
-                            shift_reg <= shift_reg(6 downto 0) & rx;
-                            bit_counter <= bit_counter + 1;
-                        else
-                            data_buffer((7-byte_counter)*8+7 downto (7-byte_counter)*8) <= shift_reg;
-                            byte_counter <= byte_counter + 1;
-                            bit_counter <= 0;
-                            if byte_counter = 7 then
-                                state <= CHECKSUM;
-                            end if;
-                        end if;
+                    if bit_counter < 8 then
+                        shift_reg <= shift_reg(6 downto 0) & rx;
+                        bit_counter <= bit_counter + 1;
                     else
-                        bit_time_counter := bit_time_counter + 1;
+                        data_buffer((7-byte_counter)*8+7 downto (7-byte_counter)*8) <= shift_reg;
+                        byte_counter <= byte_counter + 1;
+                        bit_counter <= 0;
+                        if byte_counter = 7 then
+                            state <= CHECKSUM;
+                        end if;
                     end if;
 
                 when CHECKSUM =>
-                    if bit_time_counter = BIT_TIME-1 then
-                        bit_time_counter := 0;
-                        if bit_counter < 8 then
-                            checksum <= checksum(6 downto 0) & rx;
-                            bit_counter <= bit_counter + 1;
-                        else
-                            -- Verify checksum (simplified)
-                            if checksum = x"AA" then -- Example checksum
-                                data_out <= data_buffer;
-                                data_valid <= '1';
-                            end if;
-                            state <= IDLE;
-                        end if;
+                    if bit_counter < 8 then
+                        checksum <= checksum(6 downto 0) & rx;
+                        bit_counter <= bit_counter + 1;
                     else
-                        bit_time_counter := bit_time_counter + 1;
+                        -- Verify checksum (simplified)
+                        if checksum = x"AA" then -- Example checksum
+                            data_out <= data_buffer;
+                            data_valid <= '1';
+                        end if;
+                        state <= IDLE;
                     end if;
             end case;
         end if;
