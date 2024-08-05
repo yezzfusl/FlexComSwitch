@@ -9,10 +9,12 @@ entity top_level is
         can_tx : out STD_LOGIC;
         lin_rx : in STD_LOGIC;
         lin_tx : out STD_LOGIC;
+        flexray_rx : in STD_LOGIC;
+        flexray_tx : out STD_LOGIC;
         data_in : in STD_LOGIC_VECTOR(63 downto 0);
         data_out : out STD_LOGIC_VECTOR(63 downto 0);
         data_valid : out STD_LOGIC;
-        protocol_select : in STD_LOGIC -- '0' for CAN, '1' for LIN
+        protocol_select : in STD_LOGIC_VECTOR(1 downto 0) -- "00" for CAN, "01" for LIN, "10" for FlexRay
     );
 end top_level;
 
@@ -21,8 +23,9 @@ architecture Behavioral of top_level is
     signal rst : STD_LOGIC;
     signal can_rx_internal, can_tx_internal : STD_LOGIC;
     signal lin_rx_internal, lin_tx_internal : STD_LOGIC;
-    signal can_data_out, lin_data_out : STD_LOGIC_VECTOR(63 downto 0);
-    signal can_data_valid, lin_data_valid : STD_LOGIC;
+    signal flexray_rx_internal, flexray_tx_internal : STD_LOGIC;
+    signal can_data_out, lin_data_out, flexray_data_out : STD_LOGIC_VECTOR(63 downto 0);
+    signal can_data_valid, lin_data_valid, flexray_data_valid : STD_LOGIC;
 
     component clock_generator
         Port ( 
@@ -85,6 +88,29 @@ architecture Behavioral of top_level is
         );
     end component;
 
+    component flexray_controller
+        Port ( 
+            clk : in STD_LOGIC;
+            rst : in STD_LOGIC;
+            rx : in STD_LOGIC;
+            tx : out STD_LOGIC;
+            data_in : in STD_LOGIC_VECTOR(63 downto 0);
+            data_out : out STD_LOGIC_VECTOR(63 downto 0);
+            data_valid : out STD_LOGIC
+        );
+    end component;
+
+    component flexray_transceiver
+        Port ( 
+            clk : in STD_LOGIC;
+            rst : in STD_LOGIC;
+            tx_in : in STD_LOGIC;
+            rx_out : out STD_LOGIC;
+            bus_plus : inout STD_LOGIC;
+            bus_minus : inout STD_LOGIC
+        );
+    end component;
+
 begin
     clock_gen: clock_generator
         port map (
@@ -141,16 +167,44 @@ begin
             lin_bus => lin_rx
         );
 
+    flexray_ctrl: flexray_controller
+        port map (
+            clk => clk_1m,
+            rst => rst,
+            rx => flexray_rx_internal,
+            tx => flexray_tx_internal,
+            data_in => data_in,
+            data_out => flexray_data_out,
+            data_valid => flexray_data_valid
+        );
+
+    flexray_xcvr: flexray_transceiver
+        port map (
+            clk => clk_1m,
+            rst => rst,
+            tx_in => flexray_tx_internal,
+            rx_out => flexray_rx_internal,
+            bus_plus => flexray_rx,
+            bus_minus => flexray_tx
+        );
+
     -- Protocol selection mux
-    process(protocol_select, can_data_out, lin_data_out, can_data_valid, lin_data_valid)
+    process(protocol_select, can_data_out, lin_data_out, flexray_data_out, can_data_valid, lin_data_valid, flexray_data_valid)
     begin
-        if protocol_select = '0' then
-            data_out <= can_data_out;
-            data_valid <= can_data_valid;
-        else
-            data_out <= lin_data_out;
-            data_valid <= lin_data_valid;
-        end if;
+        case protocol_select is
+            when "00" =>
+                data_out <= can_data_out;
+                data_valid <= can_data_valid;
+            when "01" =>
+                data_out <= lin_data_out;
+                data_valid <= lin_data_valid;
+            when "10" =>
+                data_out <= flexray_data_out;
+                data_valid <= flexray_data_valid;
+            when others =>
+                data_out <= (others => '0');
+                data_valid <= '0';
+        end case;
     end process;
 
 end Behavioral;
